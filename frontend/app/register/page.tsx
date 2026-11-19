@@ -4,14 +4,220 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+type LocationOption = {
+  code: string;
+  name: string;
+};
+
+const PSGC_API = "https://psgc.cloud/api/v2";
+
+async function fetchLocations(url: string): Promise<LocationOption[]> {
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error("Unable to load location data.");
+  }
+
+  const result = await response.json();
+
+  // Supports both direct arrays and Laravel-style data responses.
+  const items = Array.isArray(result) ? result : result.data;
+
+  if (!Array.isArray(items)) {
+    throw new Error("Invalid location data received.");
+  }
+
+  return items.map((item: LocationOption) => ({
+    code: item.code,
+    name: item.name,
+  }));
+}
+
 export default function RegisterPage() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success" | "">("");
   const [today, setToday] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // PSGC location states
+  const [regions, setRegions] = useState<LocationOption[]>([]);
+  const [provinces, setProvinces] = useState<LocationOption[]>([]);
+  const [cities, setCities] = useState<LocationOption[]>([]);
+  const [barangays, setBarangays] = useState<LocationOption[]>([]);
+
+  const [selectedRegion, setSelectedRegion] = useState("");
+  const [selectedProvince, setSelectedProvince] = useState("");
+  const [selectedCity, setSelectedCity] = useState("");
+  const [selectedBarangay, setSelectedBarangay] = useState("");
+
+  const [loadingRegions, setLoadingRegions] = useState(false);
+  const [loadingProvinces, setLoadingProvinces] = useState(false);
+  const [loadingCities, setLoadingCities] = useState(false);
+  const [loadingBarangays, setLoadingBarangays] = useState(false);
+  const [locationError, setLocationError] = useState("");
 
   useEffect(() => {
-    setToday(new Date().toISOString().split("T")[0]);
+    const localDate = new Date();
+    const year = localDate.getFullYear();
+    const month = String(localDate.getMonth() + 1).padStart(2, "0");
+    const day = String(localDate.getDate()).padStart(2, "0");
+
+    setToday(`${year}-${month}-${day}`);
   }, []);
+
+  // Load all regions when the page opens.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRegions() {
+      setLoadingRegions(true);
+      setLocationError("");
+
+      try {
+        const data = await fetchLocations(`${PSGC_API}/regions`);
+
+        if (!cancelled) {
+          setRegions(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setLocationError(
+            "Unable to load regions. Please refresh the page and try again."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingRegions(false);
+        }
+      }
+    }
+
+    loadRegions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load provinces whenever the selected region changes.
+  useEffect(() => {
+    if (!selectedRegion) {
+      setProvinces([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadProvinces() {
+      setLoadingProvinces(true);
+      setLocationError("");
+
+      try {
+        const data = await fetchLocations(
+          `${PSGC_API}/regions/${encodeURIComponent(selectedRegion)}/provinces`
+        );
+
+        if (!cancelled) {
+          setProvinces(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setLocationError("Unable to load provinces. Please try again.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingProvinces(false);
+        }
+      }
+    }
+
+    loadProvinces();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRegion]);
+
+  // Load cities and municipalities whenever the province changes.
+  useEffect(() => {
+    if (!selectedProvince) {
+      setCities([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadCities() {
+      setLoadingCities(true);
+      setLocationError("");
+
+      try {
+        const data = await fetchLocations(
+          `${PSGC_API}/provinces/${encodeURIComponent(selectedProvince)}/cities-municipalities`
+        );
+
+        if (!cancelled) {
+          setCities(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setLocationError(
+            "Unable to load cities and municipalities. Please try again."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingCities(false);
+        }
+      }
+    }
+
+    loadCities();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProvince]);
+
+  // Load barangays whenever the city or municipality changes.
+  useEffect(() => {
+    if (!selectedCity) {
+      setBarangays([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadBarangays() {
+      setLoadingBarangays(true);
+      setLocationError("");
+
+      try {
+        const data = await fetchLocations(
+          `${PSGC_API}/cities-municipalities/${encodeURIComponent(selectedCity)}/barangays`
+        );
+
+        if (!cancelled) {
+          setBarangays(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setLocationError("Unable to load barangays. Please try again.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingBarangays(false);
+        }
+      }
+    }
+
+    loadBarangays();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCity]);
 
   function clearMessage() {
     setMessage("");
@@ -31,6 +237,7 @@ export default function RegisterPage() {
     const role = String(formData.get("role") || "");
     const password = String(formData.get("password") || "");
     const confirmPassword = String(formData.get("confirm_password") || "");
+    const street = String(formData.get("street") || "").trim();
 
     if (
       !firstName ||
@@ -40,20 +247,35 @@ export default function RegisterPage() {
       !email ||
       !role ||
       !password ||
-      !confirmPassword
+      !confirmPassword ||
+      !street ||
+      !selectedRegion ||
+      !selectedProvince ||
+      !selectedCity ||
+      !selectedBarangay
     ) {
-      setMessage("Please complete all required fields.");
+      setMessage("Please complete all required fields, including your address.");
       setMessageType("error");
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailPattern.test(email)) {
       setMessage("Please enter a valid email address.");
       setMessageType("error");
       return;
     }
 
-    if (!/^09\d{9}$/.test(phone)) {
+    if (today && birthDate > today) {
+      setMessage("Date of birth cannot be in the future.");
+      setMessageType("error");
+      return;
+    }
+
+    const phonePattern = /^09\d{9}$/;
+
+    if (!phonePattern.test(phone)) {
       setMessage(
         "Please enter a valid 11-digit Philippine mobile number starting with 09."
       );
@@ -74,15 +296,20 @@ export default function RegisterPage() {
     }
 
     setMessage(
-      "Your registration details passed validation! Account creation will be available once the backend is connected."
+      "Your registration details and address passed validation! Account creation will be available once the backend is connected."
     );
     setMessageType("success");
   }
 
-  return (
-    <main className="min-h-[80vh] bg-[#FBE8CE] px-6 py-16">
-      <div className="mx-auto max-w-2xl rounded-3xl border border-[#E4DFB5] bg-white p-8 shadow-xl sm:p-10">
+  const inputClass =
+    "w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm text-[#303522] outline-none transition placeholder:text-[#999987] focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30";
 
+  const labelClass =
+    "mb-2 block text-sm font-semibold text-[#303522]";
+
+  return (
+    <main className="min-h-[80vh] bg-[#FBE8CE] px-4 py-12 sm:px-6 sm:py-16">
+      <div className="mx-auto max-w-2xl rounded-3xl border border-[#E4DFB5] bg-white p-6 shadow-xl sm:p-10">
         {/* Heading */}
         <div className="mb-8 text-center">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#718653]">
@@ -100,7 +327,6 @@ export default function RegisterPage() {
         </div>
 
         <form className="space-y-6" onSubmit={handleSubmit}>
-
           {/* Personal Information */}
           <div>
             <h2 className="mb-4 border-b border-[#E4DFB5] pb-3 text-lg font-semibold text-[#303522]">
@@ -109,13 +335,9 @@ export default function RegisterPage() {
 
             <div className="grid gap-5 sm:grid-cols-2">
               <div>
-                <label
-                  htmlFor="firstName"
-                  className="mb-2 block text-sm font-semibold text-[#303522]"
-                >
+                <label htmlFor="firstName" className={labelClass}>
                   First Name
                 </label>
-
                 <input
                   id="firstName"
                   name="first_name"
@@ -124,18 +346,14 @@ export default function RegisterPage() {
                   required
                   autoComplete="given-name"
                   onChange={clearMessage}
-                  className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm outline-none transition focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
+                  className={inputClass}
                 />
               </div>
 
               <div>
-                <label
-                  htmlFor="lastName"
-                  className="mb-2 block text-sm font-semibold text-[#303522]"
-                >
+                <label htmlFor="lastName" className={labelClass}>
                   Last Name
                 </label>
-
                 <input
                   id="lastName"
                   name="last_name"
@@ -144,18 +362,14 @@ export default function RegisterPage() {
                   required
                   autoComplete="family-name"
                   onChange={clearMessage}
-                  className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm outline-none transition focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
+                  className={inputClass}
                 />
               </div>
 
               <div>
-                <label
-                  htmlFor="birthDate"
-                  className="mb-2 block text-sm font-semibold text-[#303522]"
-                >
+                <label htmlFor="birthDate" className={labelClass}>
                   Date of Birth
                 </label>
-
                 <input
                   id="birthDate"
                   name="birth_date"
@@ -163,18 +377,14 @@ export default function RegisterPage() {
                   required
                   max={today || undefined}
                   onChange={clearMessage}
-                  className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm outline-none transition focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
+                  className={inputClass}
                 />
               </div>
 
               <div>
-                <label
-                  htmlFor="phone"
-                  className="mb-2 block text-sm font-semibold text-[#303522]"
-                >
+                <label htmlFor="phone" className={labelClass}>
                   Phone Number
                 </label>
-
                 <input
                   id="phone"
                   name="phone"
@@ -184,9 +394,189 @@ export default function RegisterPage() {
                   required
                   autoComplete="tel"
                   onChange={clearMessage}
-                  className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm outline-none transition focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
+                  className={inputClass}
+                />
+                <p className="mt-2 text-xs text-[#777763]">
+                  Enter an 11-digit Philippine mobile number.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Address Information */}
+          <div>
+            <h2 className="mb-4 border-b border-[#E4DFB5] pb-3 text-lg font-semibold text-[#303522]">
+              Address Information
+            </h2>
+
+            <div className="space-y-5">
+              <div>
+                <label htmlFor="street" className={labelClass}>
+                  House No., Street, or Building
+                </label>
+                <input
+                  id="street"
+                  name="street"
+                  type="text"
+                  placeholder="Enter house number, street, or building"
+                  required
+                  autoComplete="street-address"
+                  onChange={clearMessage}
+                  className={inputClass}
                 />
               </div>
+
+              <div>
+                <label htmlFor="region" className={labelClass}>
+                  Region
+                </label>
+                <select
+                  id="region"
+                  name="region_code"
+                  required
+                  value={selectedRegion}
+                  onChange={(e) => {
+                    setSelectedRegion(e.target.value);
+                    setSelectedProvince("");
+                    setSelectedCity("");
+                    setSelectedBarangay("");
+                    setProvinces([]);
+                    setCities([]);
+                    setBarangays([]);
+                    clearMessage();
+                  }}
+                  className={inputClass}
+                >
+                  <option value="">
+                    {loadingRegions ? "Loading regions..." : "Select region"}
+                  </option>
+
+                  {regions.map((region) => (
+                    <option key={region.code} value={region.code}>
+                      {region.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="province" className={labelClass}>
+                  Province
+                </label>
+                <select
+                  id="province"
+                  name="province_code"
+                  required
+                  value={selectedProvince}
+                  disabled={!selectedRegion || loadingProvinces}
+                  onChange={(e) => {
+                    setSelectedProvince(e.target.value);
+                    setSelectedCity("");
+                    setSelectedBarangay("");
+                    setCities([]);
+                    setBarangays([]);
+                    clearMessage();
+                  }}
+                  className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  <option value="">
+                    {!selectedRegion
+                      ? "Select a region first"
+                      : loadingProvinces
+                        ? "Loading provinces..."
+                        : provinces.length === 0
+                          ? "No provinces available"
+                          : "Select province"}
+                  </option>
+
+                  {provinces.map((province) => (
+                    <option key={province.code} value={province.code}>
+                      {province.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="city" className={labelClass}>
+                  City / Municipality
+                </label>
+                <select
+                  id="city"
+                  name="city_municipality_code"
+                  required
+                  value={selectedCity}
+                  disabled={!selectedProvince || loadingCities}
+                  onChange={(e) => {
+                    setSelectedCity(e.target.value);
+                    setSelectedBarangay("");
+                    setBarangays([]);
+                    clearMessage();
+                  }}
+                  className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  <option value="">
+                    {!selectedProvince
+                      ? "Select a province first"
+                      : loadingCities
+                        ? "Loading cities and municipalities..."
+                        : cities.length === 0
+                          ? "No cities or municipalities available"
+                          : "Select city or municipality"}
+                  </option>
+
+                  {cities.map((city) => (
+                    <option key={city.code} value={city.code}>
+                      {city.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="barangay" className={labelClass}>
+                  Barangay
+                </label>
+                <select
+                  id="barangay"
+                  name="barangay_code"
+                  required
+                  value={selectedBarangay}
+                  disabled={!selectedCity || loadingBarangays}
+                  onChange={(e) => {
+                    setSelectedBarangay(e.target.value);
+                    clearMessage();
+                  }}
+                  className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  <option value="">
+                    {!selectedCity
+                      ? "Select a city or municipality first"
+                      : loadingBarangays
+                        ? "Loading barangays..."
+                        : barangays.length === 0
+                          ? "No barangays available"
+                          : "Select barangay"}
+                  </option>
+
+                  {barangays.map((barangay) => (
+                    <option key={barangay.code} value={barangay.code}>
+                      {barangay.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {locationError && (
+                <p role="alert" className="text-sm text-red-600">
+                  {locationError}
+                </p>
+              )}
+
+              <p className="text-xs leading-5 text-[#777763]">
+                Select your location in order: Region, Province,
+                City/Municipality, and Barangay.
+              </p>
             </div>
           </div>
 
@@ -198,13 +588,9 @@ export default function RegisterPage() {
 
             <div className="space-y-5">
               <div>
-                <label
-                  htmlFor="email"
-                  className="mb-2 block text-sm font-semibold text-[#303522]"
-                >
+                <label htmlFor="email" className={labelClass}>
                   Email Address
                 </label>
-
                 <input
                   id="email"
                   name="email"
@@ -213,41 +599,30 @@ export default function RegisterPage() {
                   required
                   autoComplete="email"
                   onChange={clearMessage}
-                  className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm outline-none transition focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
+                  className={inputClass}
                 />
               </div>
 
               <div>
-                <label
-                  htmlFor="role"
-                  className="mb-2 block text-sm font-semibold text-[#303522]"
-                >
+                <label htmlFor="role" className={labelClass}>
                   Register As
                 </label>
-
                 <select
                   id="role"
                   name="role"
                   required
                   defaultValue=""
                   onChange={clearMessage}
-                  className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm text-[#303522] outline-none transition focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
+                  className={inputClass}
                 >
                   <option value="" disabled>
                     Select your account role
                   </option>
-
                   <option value="customer">
                     Customer (Student / Faculty)
                   </option>
-
-                  <option value="vendor">
-                    Canteen Vendor
-                  </option>
-
-                  <option value="runner">
-                    Student Delivery Runner
-                  </option>
+                  <option value="vendor">Canteen Vendor</option>
+                  <option value="runner">Student Delivery Runner</option>
                 </select>
 
                 <p className="mt-2 text-xs leading-5 text-[#777763]">
@@ -256,45 +631,67 @@ export default function RegisterPage() {
               </div>
 
               <div>
-                <label
-                  htmlFor="password"
-                  className="mb-2 block text-sm font-semibold text-[#303522]"
-                >
+                <label htmlFor="password" className={labelClass}>
                   Password
                 </label>
 
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  minLength={8}
-                  placeholder="Create a password (at least 8 characters)"
-                  required
-                  autoComplete="new-password"
-                  onChange={clearMessage}
-                  className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm outline-none transition focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
-                />
+                <div className="relative">
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    minLength={8}
+                    placeholder="Create a password (at least 8 characters)"
+                    required
+                    autoComplete="new-password"
+                    onChange={clearMessage}
+                    className={`${inputClass} pr-16`}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#718653] transition hover:text-[#52643D]"
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
               </div>
 
               <div>
-                <label
-                  htmlFor="confirmPassword"
-                  className="mb-2 block text-sm font-semibold text-[#303522]"
-                >
+                <label htmlFor="confirmPassword" className={labelClass}>
                   Confirm Password
                 </label>
 
-                <input
-                  id="confirmPassword"
-                  name="confirm_password"
-                  type="password"
-                  minLength={8}
-                  placeholder="Re-enter your password"
-                  required
-                  autoComplete="new-password"
-                  onChange={clearMessage}
-                  className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm outline-none transition focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
-                />
+                <div className="relative">
+                  <input
+                    id="confirmPassword"
+                    name="confirm_password"
+                    type={showConfirmPassword ? "text" : "password"}
+                    minLength={8}
+                    placeholder="Re-enter your password"
+                    required
+                    autoComplete="new-password"
+                    onChange={clearMessage}
+                    className={`${inputClass} pr-16`}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowConfirmPassword(!showConfirmPassword)
+                    }
+                    aria-label={
+                      showConfirmPassword
+                        ? "Hide confirm password"
+                        : "Show confirm password"
+                    }
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#718653] transition hover:text-[#52643D]"
+                  >
+                    {showConfirmPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -303,10 +700,11 @@ export default function RegisterPage() {
           {message && (
             <div
               role="alert"
+              aria-live="polite"
               className={`rounded-xl border px-4 py-3 text-sm leading-6 ${
                 messageType === "error"
                   ? "border-red-200 bg-red-50 text-red-700"
-                  : "border-green-200 bg-green-50 text-green-700"
+                  : "border-[#9AB17A] bg-[#F0F5E9] text-[#52643D]"
               }`}
             >
               {message}

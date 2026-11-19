@@ -7,6 +7,7 @@ import { useState } from "react";
 export default function LoginPage() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success" | "">("");
+  const [showPassword, setShowPassword] = useState(false);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -21,7 +22,9 @@ export default function LoginPage() {
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailPattern.test(email)) {
       setMessage("Please enter a valid email address.");
       setMessageType("error");
       return;
@@ -41,7 +44,6 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-[80vh] items-center justify-center bg-[#FBE8CE] px-6 py-16">
       <div className="w-full max-w-md rounded-3xl border border-[#E4DFB5] bg-white p-8 shadow-xl sm:p-10">
-
         {/* Heading */}
         <div className="mb-8 text-center">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#718653]">
@@ -75,7 +77,7 @@ export default function LoginPage() {
               placeholder="Enter your email address"
               required
               autoComplete="email"
-              className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm outline-none transition focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
+              className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm text-[#303522] outline-none transition placeholder:text-[#999987] focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
               onChange={clearMessage}
             />
           </div>
@@ -88,16 +90,27 @@ export default function LoginPage() {
               Password
             </label>
 
-            <input
-              id="password"
-              name="password"
-              type="password"
-              placeholder="Enter your password"
-              required
-              autoComplete="current-password"
-              className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm outline-none transition focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
-              onChange={clearMessage}
-            />
+            <div className="relative">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter your password"
+                required
+                autoComplete="current-password"
+                className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 pr-16 text-sm text-[#303522] outline-none transition placeholder:text-[#999987] focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
+                onChange={clearMessage}
+              />
+
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#718653] transition hover:text-[#52643D]"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
           </div>
 
           <div className="flex justify-end">
@@ -115,7 +128,7 @@ export default function LoginPage() {
               className={`rounded-xl border px-4 py-3 text-sm leading-6 ${
                 messageType === "error"
                   ? "border-red-200 bg-red-50 text-red-700"
-                  : "border-green-200 bg-green-50 text-green-700"
+                  : "border-[#9AB17A] bg-[#F0F5E9] text-[#52643D]"
               }`}
             >
               {message}

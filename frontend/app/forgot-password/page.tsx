@@ -20,7 +20,9 @@ export default function ForgotPasswordPage() {
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailPattern.test(email)) {
       setMessage("Please enter a valid email address.");
       setMessageType("error");
       return;
@@ -38,8 +40,8 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <main className="min-h-[80vh] bg-[#FBE8CE] px-6 py-16">
-      <div className="mx-auto max-w-md rounded-3xl border border-[#E4DFB5] bg-white p-8 shadow-xl sm:p-10">
+    <main className="min-h-[80vh] bg-[#FBE8CE] px-4 py-12 sm:px-6 sm:py-16">
+      <div className="mx-auto w-full max-w-md rounded-3xl border border-[#E4DFB5] bg-white p-6 shadow-xl sm:p-10">
 
         {/* Heading */}
         <div className="mb-8 text-center">
@@ -75,7 +77,7 @@ export default function ForgotPasswordPage() {
               required
               autoComplete="email"
               onChange={clearMessage}
-              className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm outline-none transition focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
+              className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm text-[#303522] outline-none transition placeholder:text-[#999987] focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
             />
           </div>
 
@@ -83,16 +85,18 @@ export default function ForgotPasswordPage() {
           {message && (
             <div
               role="alert"
+              aria-live="polite"
               className={`rounded-xl border px-4 py-3 text-sm leading-6 ${
                 messageType === "error"
                   ? "border-red-200 bg-red-50 text-red-700"
-                  : "border-green-200 bg-green-50 text-green-700"
+                  : "border-[#9AB17A] bg-[#F0F5E9] text-[#52643D]"
               }`}
             >
               {message}
             </div>
           )}
 
+          {/* Submit Button */}
           <button
             type="submit"
             className="w-full rounded-xl bg-[#718653] px-6 py-3.5 text-sm font-bold text-white transition duration-300 hover:-translate-y-0.5 hover:bg-[#52643D] hover:shadow-lg"
