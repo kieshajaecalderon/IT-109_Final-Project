@@ -7,6 +7,7 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PayMongoWebhookController;
 
+// Authenticated User
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
@@ -26,7 +27,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Payment
     Route::get('/payments/{id}', [PaymentController::class, 'show']);
 
-    // PayMongo Webhook (Public endpoint)
-    Route::post('/webhooks/paymongo', [PayMongoWebhookController::class, 'handle']);
-
 });
+
+// Public PayMongo Webhook
+Route::post('/webhooks/paymongo', [
+    PayMongoWebhookController::class,
+    'handle'
+]);
