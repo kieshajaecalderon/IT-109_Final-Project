@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Address;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -19,14 +18,24 @@ class AuthController extends Controller
      */
     public function register(Request $request): JsonResponse
     {
+        // Normalize usernames to lowercase before validation.
+        $request->merge([
+            'username' => strtolower((string) $request->input('username')),
+        ]);
+
         $validated = $request->validate([
             'first_name' => ['required', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'],
-            'birth_date' => ['nullable', 'date', 'before:today'],
-            'phone' => [
+            'username' => [
                 'required',
-                'regex:/^09\d{9}$/',
+                'string',
+                'min:4',
+                'max:20',
+                'regex:/^[a-zA-Z0-9_]+$/',
+                'unique:users,username',
             ],
+            'birth_date' => ['nullable', 'date', 'before:today'],
+            'phone' => ['required', 'regex:/^09\d{9}$/'],
             'email' => [
                 'required',
                 'email',
@@ -37,13 +46,13 @@ class AuthController extends Controller
                 'required',
                 'string',
                 'min:8',
+                'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/',
                 'confirmed',
             ],
             'role' => [
                 'required',
                 Rule::in(['Customer', 'Vendor', 'Runner']),
             ],
-
             'region' => ['nullable', 'string', 'max:255'],
             'province' => ['nullable', 'string', 'max:255'],
             'city' => ['nullable', 'string', 'max:255'],
@@ -72,6 +81,7 @@ class AuthController extends Controller
                 'name' => trim(
                     $validated['first_name'] . ' ' . $validated['last_name']
                 ),
+                'username' => $validated['username'],
                 'email' => $validated['email'],
                 'password' => $validated['password'],
                 'phone' => $validated['phone'],
@@ -112,20 +122,30 @@ class AuthController extends Controller
     }
 
     /**
-     * Log in an existing user.
+     * Log in an existing user using username and password.
      */
     public function login(Request $request): JsonResponse
     {
+        $request->merge([
+            'username' => strtolower((string) $request->input('username')),
+        ]);
+
         $validated = $request->validate([
-            'email' => ['required', 'email'],
+            'username' => [
+                'required',
+                'string',
+                'min:4',
+                'max:20',
+                'regex:/^[a-zA-Z0-9_]+$/',
+            ],
             'password' => ['required', 'string'],
         ]);
 
-        $user = User::where('email', $validated['email'])->first();
+        $user = User::where('username', $validated['username'])->first();
 
         if (!$user || !Hash::check($validated['password'], $user->password)) {
             return response()->json([
-                'message' => 'Invalid email or password.',
+                'message' => 'Invalid username or password.',
             ], 401);
         }
 

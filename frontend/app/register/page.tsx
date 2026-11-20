@@ -2,11 +2,19 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { apiRequest } from "@/lib/api";
 
 type LocationOption = {
   code: string;
   name: string;
+};
+
+type RegisterResponse = {
+  message: string;
+  token: string;
+  user: unknown;
 };
 
 const PSGC_API = "https://psgc.cloud/api/v2";
@@ -19,8 +27,6 @@ async function fetchLocations(url: string): Promise<LocationOption[]> {
   }
 
   const result = await response.json();
-
-  // Supports both direct arrays and Laravel-style data responses.
   const items = Array.isArray(result) ? result : result.data;
 
   if (!Array.isArray(items)) {
@@ -34,11 +40,14 @@ async function fetchLocations(url: string): Promise<LocationOption[]> {
 }
 
 export default function RegisterPage() {
+  const router = useRouter();
+
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success" | "">("");
   const [today, setToday] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // PSGC location states
   const [regions, setRegions] = useState<LocationOption[]>([]);
@@ -224,13 +233,17 @@ export default function RegisterPage() {
     setMessageType("");
   }
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    clearMessage();
 
     const formData = new FormData(e.currentTarget);
 
     const firstName = String(formData.get("first_name") || "").trim();
     const lastName = String(formData.get("last_name") || "").trim();
+    const username = String(formData.get("username") || "")
+      .trim()
+      .toLowerCase();
     const birthDate = String(formData.get("birth_date") || "");
     const phone = String(formData.get("phone") || "").trim();
     const email = String(formData.get("email") || "").trim();
@@ -242,6 +255,7 @@ export default function RegisterPage() {
     if (
       !firstName ||
       !lastName ||
+      !username ||
       !birthDate ||
       !phone ||
       !email ||
@@ -254,7 +268,19 @@ export default function RegisterPage() {
       !selectedCity ||
       !selectedBarangay
     ) {
-      setMessage("Please complete all required fields, including your address.");
+      setMessage(
+        "Please complete all required fields, including your address."
+      );
+      setMessageType("error");
+      return;
+    }
+
+    const usernamePattern = /^[a-zA-Z0-9_]{4,20}$/;
+
+    if (!usernamePattern.test(username)) {
+      setMessage(
+        "Username must contain 4–20 characters using only letters, numbers, or underscores."
+      );
       setMessageType("error");
       return;
     }
@@ -283,8 +309,13 @@ export default function RegisterPage() {
       return;
     }
 
-    if (password.length < 8) {
-      setMessage("Password must contain at least 8 characters.");
+    const passwordPattern =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+
+    if (!passwordPattern.test(password)) {
+      setMessage(
+        "Password must have at least 8 characters, including an uppercase letter, lowercase letter, number, and special character."
+      );
       setMessageType("error");
       return;
     }
@@ -295,17 +326,78 @@ export default function RegisterPage() {
       return;
     }
 
-    setMessage(
-      "Your registration details and address passed validation! Account creation will be available once the backend is connected."
-    );
-    setMessageType("success");
+    // Convert PSGC codes into readable location names.
+    const regionName = regions.find(
+      (item) => item.code === selectedRegion
+    )?.name;
+
+    const provinceName = provinces.find(
+      (item) => item.code === selectedProvince
+    )?.name;
+
+    const cityName = cities.find(
+      (item) => item.code === selectedCity
+    )?.name;
+
+    const barangayName = barangays.find(
+      (item) => item.code === selectedBarangay
+    )?.name;
+
+    if (!regionName || !provinceName || !cityName || !barangayName) {
+      setMessage("Please select a valid complete address.");
+      setMessageType("error");
+      return;
+    }
+
+    const payload = {
+      first_name: firstName,
+      last_name: lastName,
+      username,
+      birth_date: birthDate,
+      phone,
+      email,
+      role,
+      password,
+      password_confirmation: confirmPassword,
+      region: regionName,
+      province: provinceName,
+      city: cityName,
+      barangay: barangayName,
+      street_address: street,
+    };
+
+    setIsSubmitting(true);
+
+    try {
+      const result = await apiRequest<RegisterResponse>("/auth/register", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      // Save the authentication details returned by Laravel.
+      localStorage.setItem("canteenhub_token", result.token);
+      localStorage.setItem("canteenhub_user", JSON.stringify(result.user));
+
+      setMessage(result.message || "Registration successful!");
+      setMessageType("success");
+
+      router.push("/profile");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Registration failed. Please try again."
+      );
+      setMessageType("error");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   const inputClass =
     "w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm text-[#303522] outline-none transition placeholder:text-[#999987] focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30";
 
-  const labelClass =
-    "mb-2 block text-sm font-semibold text-[#303522]";
+  const labelClass = "mb-2 block text-sm font-semibold text-[#303522]";
 
   return (
     <main className="min-h-[80vh] bg-[#FBE8CE] px-4 py-12 sm:px-6 sm:py-16">
@@ -588,6 +680,28 @@ export default function RegisterPage() {
 
             <div className="space-y-5">
               <div>
+                <label htmlFor="username" className={labelClass}>
+                  Username
+                </label>
+                <input
+                  id="username"
+                  name="username"
+                  type="text"
+                  minLength={4}
+                  maxLength={20}
+                  pattern="[A-Za-z0-9_]{4,20}"
+                  placeholder="Choose a username (4–20 characters)"
+                  required
+                  autoComplete="username"
+                  onChange={clearMessage}
+                  className={inputClass}
+                />
+                <p className="mt-2 text-xs text-[#777763]">
+                  Use 4–20 letters, numbers, or underscores.
+                </p>
+              </div>
+
+              <div>
                 <label htmlFor="email" className={labelClass}>
                   Email Address
                 </label>
@@ -618,11 +732,11 @@ export default function RegisterPage() {
                   <option value="" disabled>
                     Select your account role
                   </option>
-                  <option value="customer">
+                  <option value="Customer">
                     Customer (Student / Faculty)
                   </option>
-                  <option value="vendor">Canteen Vendor</option>
-                  <option value="runner">Student Delivery Runner</option>
+                  <option value="Vendor">Canteen Vendor</option>
+                  <option value="Runner">Student Delivery Runner</option>
                 </select>
 
                 <p className="mt-2 text-xs leading-5 text-[#777763]">
@@ -641,7 +755,9 @@ export default function RegisterPage() {
                     name="password"
                     type={showPassword ? "text" : "password"}
                     minLength={8}
-                    placeholder="Create a password (at least 8 characters)"
+                    pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}"
+                    title="Use at least 8 characters with an uppercase letter, lowercase letter, number, and special character."
+                    placeholder="Create a strong password"
                     required
                     autoComplete="new-password"
                     onChange={clearMessage}
@@ -657,6 +773,11 @@ export default function RegisterPage() {
                     {showPassword ? "Hide" : "Show"}
                   </button>
                 </div>
+
+                <p className="mt-2 text-xs leading-5 text-[#777763]">
+                  At least 8 characters, including uppercase, lowercase,
+                  number, and special character.
+                </p>
               </div>
 
               <div>
@@ -714,9 +835,10 @@ export default function RegisterPage() {
           {/* Submit Button */}
           <button
             type="submit"
-            className="w-full rounded-xl bg-[#718653] px-6 py-3.5 text-sm font-bold text-white transition duration-300 hover:-translate-y-0.5 hover:bg-[#52643D] hover:shadow-lg"
+            disabled={isSubmitting}
+            className="w-full rounded-xl bg-[#718653] px-6 py-3.5 text-sm font-bold text-white transition duration-300 hover:-translate-y-0.5 hover:bg-[#52643D] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Create Account
+            {isSubmitting ? "Creating Account..." : "Create Account"}
           </button>
         </form>
 

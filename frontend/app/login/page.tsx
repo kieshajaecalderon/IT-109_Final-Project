@@ -2,38 +2,85 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { apiRequest } from "@/lib/api";
+
+type LoginResponse = {
+  message: string;
+  token: string;
+  token_type: string;
+  user: {
+    id: number;
+    name: string;
+    username: string;
+    email: string;
+    roles: {
+      name: string;
+    }[];
+  };
+};
 
 export default function LoginPage() {
+  const router = useRouter();
+
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success" | "">("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     const formData = new FormData(e.currentTarget);
-    const email = String(formData.get("email") || "").trim();
+    const username = String(formData.get("username") || "").trim();
     const password = String(formData.get("password") || "");
 
-    if (!email || !password) {
+    if (!username || !password) {
       setMessage("Please complete all required fields.");
       setMessageType("error");
       return;
     }
 
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const usernamePattern = /^[a-zA-Z0-9_]{4,20}$/;
 
-    if (!emailPattern.test(email)) {
-      setMessage("Please enter a valid email address.");
+    if (!usernamePattern.test(username)) {
+      setMessage(
+        "Username must be 4–20 characters and contain only letters, numbers, or underscores."
+      );
       setMessageType("error");
       return;
     }
 
-    setMessage(
-      "Your login details passed validation. Account sign-in will be available once the backend is connected."
-    );
-    setMessageType("success");
+    setIsLoading(true);
+    setMessage("");
+
+    try {
+      const data = await apiRequest<LoginResponse>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+      });
+
+      localStorage.setItem("canteenhub_token", data.token);
+      localStorage.setItem("canteenhub_user", JSON.stringify(data.user));
+
+      const role = data.user.roles?.[0]?.name?.toLowerCase();
+
+      if (role === "admin") {
+        router.push("/admin");
+      } else {
+        router.push("/profile");
+      }
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to connect to the server. Please try again."
+      );
+      setMessageType("error");
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   function clearMessage() {
@@ -44,7 +91,6 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-[80vh] items-center justify-center bg-[#FBE8CE] px-6 py-16">
       <div className="w-full max-w-md rounded-3xl border border-[#E4DFB5] bg-white p-8 shadow-xl sm:p-10">
-        {/* Heading */}
         <div className="mb-8 text-center">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#718653]">
             WELCOME BACK
@@ -60,23 +106,25 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Login Form */}
         <form className="space-y-5" onSubmit={handleSubmit}>
           <div>
             <label
-              htmlFor="email"
+              htmlFor="username"
               className="mb-2 block text-sm font-semibold text-[#303522]"
             >
-              Email Address
+              Username
             </label>
 
             <input
-              id="email"
-              name="email"
-              type="email"
-              placeholder="Enter your email address"
+              id="username"
+              name="username"
+              type="text"
+              placeholder="Enter your username"
               required
-              autoComplete="email"
+              autoComplete="username"
+              minLength={4}
+              maxLength={20}
+              pattern="[A-Za-z0-9_]{4,20}"
               className="w-full rounded-xl border border-[#C3CC9B] bg-[#F8F7F0] px-4 py-3 text-sm text-[#303522] outline-none transition placeholder:text-[#999987] focus:border-[#718653] focus:ring-2 focus:ring-[#9AB17A]/30"
               onChange={clearMessage}
             />
@@ -137,13 +185,13 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="w-full rounded-xl bg-[#718653] px-6 py-3.5 text-sm font-bold text-white transition duration-300 hover:-translate-y-0.5 hover:bg-[#52643D] hover:shadow-lg"
+            disabled={isLoading}
+            className="w-full rounded-xl bg-[#718653] px-6 py-3.5 text-sm font-bold text-white transition duration-300 hover:-translate-y-0.5 hover:bg-[#52643D] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Sign In
+            {isLoading ? "Signing In..." : "Sign In"}
           </button>
         </form>
 
-        {/* Registration Link */}
         <div className="mt-8 border-t border-[#E4DFB5] pt-6 text-center">
           <p className="text-sm text-[#777763]">
             Don't have an account?{" "}
@@ -161,7 +209,7 @@ export default function LoginPage() {
             href="/"
             className="text-xs font-medium text-[#777763] transition hover:text-[#718653]"
           >
-            ← Back to Homepage
+            ← Back to Home
           </Link>
         </div>
       </div>
